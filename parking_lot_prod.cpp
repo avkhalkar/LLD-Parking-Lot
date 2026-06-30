@@ -94,7 +94,7 @@ public:
     // Default Mapping Initialisation
     vehicleTypeToSpotTypeMap[VehicleType::CAR] = SpotType::COMPACT;
     vehicleTypeToSpotTypeMap[VehicleType::MOTORCYCLE] = SpotType::MOTORCYCLE;
-    vehicleTypeToSpotTypeMap[VehicleType::TRUCK] = SpotType::COMPACT;
+    vehicleTypeToSpotTypeMap[VehicleType::TRUCK] = SpotType::LARGE;
   }
 
   SpotType getRequiredSpotType(VehicleType vtype) const {
@@ -211,8 +211,8 @@ class ParkingLot {
   unique_ptr<PricingStrategy> pricingStrategy;
 
   // Private constructor prevents external instantiation (Singleton)
-  ParkingLot(string n)
-      : name(n), ticketCounter(0), cfg(make_unique<ParkingConfiguration>()) {}
+  ParkingLot()
+      : ticketCounter(0), cfg(make_unique<ParkingConfiguration>()) {}
 
 public:
   // Delete copy-constructor and copy assignment operators to enforce pure
@@ -221,14 +221,22 @@ public:
   ParkingLot &operator=(const ParkingLot &) = delete;
 
   // Global Access Point
-  static ParkingLot &getInstance(string n) {
-    static ParkingLot instance(n);
+  static ParkingLot &getInstance() {
+    static ParkingLot instance;
     return instance;
   }
 
   // Inject a strategy contextually overriding earlier one
   void setPriceStrategy(unique_ptr<PricingStrategy> &ps) {
     pricingStrategy = std::move(ps); // Move ownership
+  }
+
+  void setName(string n){
+    name = n;
+  }
+
+  string getName() const {
+    return name;
   }
 
   void addFloor(shared_ptr<ParkingFloor> &floor) { floors.push_back(floor); }
@@ -296,16 +304,19 @@ int main() {
       make_unique<StandardPricingStrategy>();
 
   // 1. Initialize the Parking Lot
-  ParkingLot &myLot = ParkingLot::getInstance("Decoupled-Hub");
+  ParkingLot &myLot = ParkingLot::getInstance();
   myLot.setPriceStrategy(pricingStrategy);
+  myLot.setName("Parking-Lot-1");
 
   // 2. Setup Infrastructure (1 Floor, 2 Spots: 1 Compact, 1 Motorcycle)
   auto floor1 = make_shared<ParkingFloor>("Floor-1");
   auto compactSpot = make_shared<ParkingSpot>("C-101", SpotType::COMPACT);
   auto motoSpot = make_shared<ParkingSpot>("M-201", SpotType::MOTORCYCLE);
+  auto truckSpot = make_shared<ParkingSpot>("T-200", SpotType::LARGE);
 
   floor1->addParkingSpot(compactSpot);
   floor1->addParkingSpot(motoSpot);
+  floor1->addParkingSpot(truckSpot);
   myLot.addFloor(floor1);
 
   // 3. Create Vehicles Using Factory Pattern
@@ -313,18 +324,27 @@ int main() {
   auto car2 = VehicleFactory::createVehicle("MH-12-CAR-222", VehicleType::CAR);
   auto bike1 =
       VehicleFactory::createVehicle("MH-12-BIKE-333", VehicleType::MOTORCYCLE);
+  auto truck1 = VehicleFactory::createVehicle("MH-12-TRUCK-123", VehicleType::TRUCK);
+  auto truck2 = VehicleFactory::createVehicle("MH-12-TRUCK-123", VehicleType::TRUCK);
 
   // 4. Test Entry Flow
   cout << "\n--- PROCESSING ENTRIES ---" << endl;
   auto ticket1 = myLot.entryPanel(car1);  // Should Succeed (Takes C-101)
   auto ticket2 = myLot.entryPanel(car2);  // Should Fail (No compact spots left)
   auto ticket3 = myLot.entryPanel(bike1); // Should Succeed (Takes M-201)
+  auto ticket4 = myLot.entryPanel(truck1); // Should Succeed (Takes T-200)
+  auto ticket5 = myLot.entryPanel(truck2); // Should Fail (No large spots left)
+
 
   // 5. Test Exit Flow (Billing via Strategy Pattern)
   cout << "\n--- PROCESSING EXITS ---" << endl;
   myLot.exitPanel(ticket1); // Computes bill using Car rate ($20 * 3 hrs = $60)
   myLot.exitPanel(
       ticket3); // Computes bill using Motorcycle rate ($10 * 3 hrs = $30)
+  myLot.exitPanel(ticket4); // Computers bill using Truck rate ($40 * 3 hrs = $120)
+
+  myLot.setName("Parking-Lot-2");
+  cout<<"Parking lot name changed to: "<<myLot.getName()<<endl;
 
   return 0;
 }
