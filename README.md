@@ -90,6 +90,9 @@ classDiagram
       -string ticketId
       -Vehicle vehicle
       -ParkingSpot spot
+      -bool isValid
+      +getValidity()
+      +setValidity(bool)
     }
 
     class ParkingLot {
@@ -102,6 +105,8 @@ classDiagram
       +entryPanel(Vehicle)
       +exitPanel(Ticket)
       +setPriceStrategy(PricingStrategy)
+      +setName(string)
+      +getName()
     }
 
     ParkingLot *-- ParkingConfiguration : Composition
@@ -142,10 +147,18 @@ sequenceDiagram
 
     Note over User,PricingStrategy: Vehicle Exit Flow
     User->>ParkingLot: exitPanel(Ticket)
-    ParkingLot->>ParkingSpot: removeVehicle()
-    ParkingLot->>PricingStrategy: calculateCost(Vehicle.type, hours)
-    PricingStrategy-->>ParkingLot: double amount
-    ParkingLot-->>User: Prints Receipt
+    ParkingLot->>Ticket: getValidity()
+    alt Ticket is stale
+        Ticket-->>ParkingLot: false
+        ParkingLot-->>User: WARNING - Stale ticket rejected
+    else Ticket is valid
+        Ticket-->>ParkingLot: true
+        ParkingLot->>ParkingSpot: removeVehicle()
+        ParkingLot->>PricingStrategy: calculateCost(Vehicle.type, hours)
+        PricingStrategy-->>ParkingLot: double amount
+        ParkingLot->>Ticket: setValidity(false)
+        ParkingLot-->>User: Prints Receipt
+    end
 ```
 
 ---
@@ -154,10 +167,11 @@ sequenceDiagram
 
 Interacting with the system leverages minimal, clean interfaces exposed over `ParkingLot`:
 
-- `ParkingLot::getInstance(string name)` - Bootstraps the singleton engine natively locking global variables.
+- `ParkingLot::getInstance()` - Bootstraps the singleton engine natively locking global variables.
 - `setPriceStrategy(unique_ptr<PricingStrategy> &ps)` - Hot-swap pricing computation on the fly.
 - `entryPanel(shared_ptr<Vehicle> &vehicle)` - Serves entry barrier; attempts allocation dynamically and issues a `shared_ptr<Ticket>`.
 - `exitPanel(shared_ptr<Ticket> &ticket)` - Services the check-out barrier, computes and bills the receipt duration.
+- `setName(string n)` / `getName()` - Allows the parking lot's display name to be updated and retrieved post-initialization.
 
 ---
 
@@ -173,20 +187,21 @@ Interacting with the system leverages minimal, clean interfaces exposed over `Pa
 
 ## 7. Design Patterns Highlight
 
-- **Singleton Pattern**`ParkingLot` implements local static initialization ensuring multiple gate barriers interact with a consistently singular source-of-truth ensuring spots are never double-booked.
-- **Factory Method**`VehicleFactory` cleanly separates property injection scaling safely if database instantiation of previous configurations gets implemented.
+- **Singleton Pattern** `ParkingLot` implements local static initialization ensuring multiple gate barriers interact with a consistently singular source-of-truth ensuring spots are never double-booked.
+- **Factory Method** `VehicleFactory` cleanly separates property injection scaling safely if database instantiation of previous configurations gets implemented.
 - **Strategy Pattern**
   Enabled polymorphism decoupling financial computations. `PricingStrategy` ensures pricing bounds execute interchangeably.
+
+---
+
+## 8. Security Considerations
+
+- **Stale Ticket Prevention**: Once a vehicle exits, its `Ticket` is immediately invalidated via `invalidate()`. Any subsequent attempt to re-use the same ticket at an exit panel is rejected with a warning, preventing a vehicle from being unparked twice or a spot from being incorrectly freed.
+- **Entry Guard on Missing Payment Strategy**: `entryPanel` fails fast and returns no ticket if a `PricingStrategy` has not been configured, ensuring no vehicle enters the lot without a billing mechanism in place.
+- **License Plate Validation**: `VehicleFactory` rejects empty license plates at creation time, preventing anonymous or malformed vehicles from entering the system.
+
+---
 
 ### Why not Observer Pattern?
 
 The Observer pattern is exceptionally proficient when states alter unexpectedly and multiple downstream components require immediate parallel alerts natively. In this architecture format, operations are solely synchronous transaction-to-transaction cycles initiated strictly by entry panels or exit panels. Spots becoming available don't mandate actively paging waiting clients in an event loop asynchronously; therefore rendering Observer unnecessary padding here.
-
----
-
-## 8. Future Scope & Extensibility
-
-- **Concurrent Access Integrations**: Incorporating thread-safe execution (e.g., `std::mutex` around booking a spot).
-- **Dynamic Scale Adjustments**: Real-time integration permitting APIs to construct floors or scale constraints down conditionally over administrative thresholds constraints.
-- **Database Persistence Layer**: Modifying entities wrapping ORMs converting ephemeral memory into scalable SQL/NoSQL storages ensuring data reliability past OS disruptions.
-- **Automated Gate Interceptors**: Expanding ticket systems relying on embedded cameras and License Plate recognition triggers automatically without manual validation.
