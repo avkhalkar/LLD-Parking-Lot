@@ -144,14 +144,18 @@ class Ticket {
   string ticketId;
   shared_ptr<Vehicle> vehicle;
   shared_ptr<ParkingSpot> spot;
+  bool isValid;
 
 public:
   Ticket(string id, shared_ptr<Vehicle> &v, shared_ptr<ParkingSpot> &s)
-      : ticketId(id), vehicle(v), spot(s) {}
+      : ticketId(id), vehicle(v), spot(s), isValid(true) {}
 
   string getTicketId() const { return ticketId; }
   shared_ptr<Vehicle> getVehicle() const { return vehicle; }
   shared_ptr<ParkingSpot> getSpot() const { return spot; }
+
+  bool getValidity() const { return isValid;  }
+  void invalidate(){  isValid = false; }
 };
 
 // ---------------------------------------------------------
@@ -245,6 +249,12 @@ public:
    * @brief Manages logic when a vehicle arrives at the entry boom barriers.
    */
   shared_ptr<Ticket> entryPanel(shared_ptr<Vehicle> &vehicle) {
+    
+    if(pricingStrategy==nullptr){
+      cout << "ERROR: Set a payment method first"<< endl;
+      return nullptr; // Can't give a ticket
+    }
+    
     try {
       SpotType requiredSpotType = cfg->getRequiredSpotType(vehicle->getType());
 
@@ -279,19 +289,31 @@ public:
    * @brief Manages the logic when a vehicle checks-out through exit panels.
    */
   void exitPanel(shared_ptr<Ticket> &ticket) {
-    if (!ticket)
+    
+    if (!ticket){
+        cout<<"Get a ticket"<<endl;
+        return;
+    }
+
+    // Avoiding people with stale tickets to unpark the vehicles
+    if(!ticket->getValidity()){
+      cout<<"WARNING: Park the vehicle before unparking it. Don't use stale tickets"<<endl;
       return;
+    }
 
     shared_ptr<ParkingSpot> spot = ticket->getSpot();
     shared_ptr<Vehicle> vehicle = ticket->getVehicle();
 
     spot->removeVehicle();
 
+
     // Hardcoding a 3.0 hour stay specifically for this emulation
     double cost = pricingStrategy->calculateCost(vehicle->getType(), 3.0);
-
     cout << "EXIT: Vehicle " << vehicle->getLicensePlate() << " left Spot "
-         << spot->getSpotId() << ". Total Charged: $" << cost << endl;
+    << spot->getSpotId() << ". Total Charged: $" << cost << endl;
+
+    // Marking the ticket as stale
+    ticket->invalidate();
   }
 };
 
@@ -345,6 +367,8 @@ int main() {
 
   myLot.setName("Parking-Lot-2");
   cout<<"Parking lot name changed to: "<<myLot.getName()<<endl;
+
+  myLot.exitPanel(ticket3); // Warns to not use stale tickets
 
   return 0;
 }
